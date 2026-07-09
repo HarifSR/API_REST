@@ -8,7 +8,7 @@ const { verificarAdmin } = require('../middleware/authMiddleware');
 router.get('/', async (req, res) => {
   try {
     const query = `
-      SELECT p.*, c.nombre AS categoria, u.abreviacion AS unidad_medida 
+      SELECT p.*, c.nombre AS categoria_nombre, u.abreviacion AS unidad_codigo 
       FROM productos p
       LEFT JOIN categorias c ON p.categoria_id = c.id
       LEFT JOIN unidades_medida u ON p.unidad_base_id = u.id
@@ -51,14 +51,14 @@ router.post('/', verificarAdmin, async (req, res) => {
 // PUT: Actualizar un producto existente (Protegido)
 router.put('/:id', verificarAdmin, async (req, res) => {
   const { id } = req.params;
-  const { nombre, precio, cantidad_stock, categoria_id, unidad_base_id } = req.body;
+  const { nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca, descripcion } = req.body;
   
   try {
     const result = await pool.query(
       `UPDATE productos 
-       SET nombre = $1, precio = $2, cantidad_stock = $3, categoria_id = $4, unidad_base_id = $5 
-       WHERE id = $6 RETURNING *`,
-      [nombre, precio, cantidad_stock, categoria_id, unidad_base_id, id]
+       SET nombre = $1, precio = $2, cantidad_stock = $3, categoria_id = $4, unidad_base_id = $5, marca = $6, descripcion = $7
+       WHERE id = $8 RETURNING *`,
+      [nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca || 'Genérica', descripcion || '', id]
     );
 
     if (result.rowCount === 0) {

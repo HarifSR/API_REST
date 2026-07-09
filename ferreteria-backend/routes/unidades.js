@@ -18,7 +18,7 @@ router.post('/', verificarAdmin, async (req, res) => {
   const { nombre, codigo } = req.body;
   try {
     const nueva = await pool.query(
-      'INSERT INTO unidades_medida (nombre, codigo) VALUES ($1, $2) RETURNING *',
+      'INSERT INTO unidades_medida (nombre, abreviacion) VALUES ($1, $2) RETURNING *',
       [nombre, codigo.toUpperCase()]
     );
     res.status(201).json({ mensaje: 'Unidad creada', unidad: nueva.rows[0] });
