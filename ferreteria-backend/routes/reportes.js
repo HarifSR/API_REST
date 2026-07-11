@@ -59,12 +59,20 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
     `;
     const ventasPorCategoriaRes = await pool.query(ventasPorCategoriaQuery);
 
-    // 6. Historial de ventas recientes (últimas 20), con cantidad de artículos por venta
+    // 6. Comparación Contado vs Crédito
+    const ventasPorTipoQuery = `
+      SELECT tipo_venta, COUNT(*) AS cantidad, COALESCE(SUM(total), 0) AS total
+      FROM ventas
+      GROUP BY tipo_venta;
+    `;
+    const ventasPorTipoRes = await pool.query(ventasPorTipoQuery);
+
+    // 7. Historial de ventas recientes (últimas 20), con su tipo y cantidad de artículos
     const historialQuery = `
-      SELECT v.id, v.fecha, v.total, COUNT(dv.id) AS items
+      SELECT v.id, v.fecha, v.total, v.tipo_venta, COUNT(dv.id) AS items
       FROM ventas v
       LEFT JOIN detalle_ventas dv ON dv.venta_id = v.id
-      GROUP BY v.id, v.fecha, v.total
+      GROUP BY v.id, v.fecha, v.total, v.tipo_venta
       ORDER BY v.fecha DESC
       LIMIT 20;
     `;
@@ -83,6 +91,11 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
       valorInventario: parseFloat(inventarioRes.rows[0].valor_inventario),
       agotados: parseInt(inventarioRes.rows[0].agotados, 10),
       ventasPorCategoria: ventasPorCategoriaRes.rows,
+      ventasPorTipo: ventasPorTipoRes.rows.map(r => ({
+        tipoVenta: r.tipo_venta,
+        cantidad: parseInt(r.cantidad, 10),
+        total: parseFloat(r.total)
+      })),
       historialVentas: historialRes.rows
     });
 

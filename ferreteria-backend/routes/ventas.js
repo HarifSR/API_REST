@@ -4,7 +4,8 @@ const pool = require('../db');
 
 // POST: Procesar una venta, verificar y reducir stock (Transaccional)
 router.post('/', async (req, res) => {
-  const { carrito, total } = req.body; 
+  const { carrito, total, tipoVenta } = req.body;
+  const tipoVentaFinal = (tipoVenta === 'Crédito' || tipoVenta === 'Credito') ? 'Crédito' : 'Contado';
 
   if (!carrito || carrito.length === 0) {
     return res.status(400).json({ error: 'El carrito de compras está vacío.' });
@@ -17,10 +18,10 @@ router.post('/', async (req, res) => {
     // Iniciamos la transacción atómica
     await client.query('BEGIN'); 
 
-    // 1. Insertar la cabecera de la venta
+    // 1. Insertar la cabecera de la venta (con su tipo: Contado o Crédito)
     const resVenta = await client.query(
-      'INSERT INTO ventas (total) VALUES ($1) RETURNING id',
-      [total]
+      'INSERT INTO ventas (total, tipo_venta) VALUES ($1, $2) RETURNING id, fecha, total, tipo_venta',
+      [total, tipoVentaFinal]
     );
     const ventaId = resVenta.rows[0].id;
 
@@ -53,7 +54,13 @@ router.post('/', async (req, res) => {
 
     // Si todo salió bien, guardamos definitivamente todos los cambios en Postgres
     await client.query('COMMIT'); 
-    res.status(201).json({ mensaje: '🧾 ¡Venta procesada con éxito! Inventario actualizado.', ventaId });
+    res.status(201).json({
+      mensaje: tipoVentaFinal === 'Crédito' ? '🧾 ¡Factura de crédito generada!' : '🧾 ¡Venta cobrada con éxito!',
+      ventaId,
+      fecha: resVenta.rows[0].fecha,
+      total: parseFloat(resVenta.rows[0].total),
+      tipoVenta: resVenta.rows[0].tipo_venta
+    });
 
   } catch (err) {
     // Si ocurre CUALQUIER error en el ciclo, deshacemos todo lo que se alteró en esta consulta
