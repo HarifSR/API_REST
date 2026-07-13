@@ -11,7 +11,6 @@ app.use(express.json());
 // Importar Rutas
 const authRoutes = require('./routes/auth');
 const productosRoutes = require('./routes/productos'); // <-- AÑADE ESTA LÍNEA
-const ventasRoutes = require('./routes/ventas');
 const reportesRoutes = require('./routes/reportes');
 const categoriasRoutes = require('./routes/categorias');
 const unidadesRoutes = require('./routes/unidades');
@@ -19,7 +18,6 @@ const unidadesRoutes = require('./routes/unidades');
 // Usar Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/productos', productosRoutes); // <-- AÑADE ESTA LÍNEA
-app.use('/api/ventas', ventasRoutes);
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/unidades', unidadesRoutes);

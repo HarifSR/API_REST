@@ -24,11 +24,11 @@ router.get('/', async (req, res) => {
 
 // 2. POST: Crear un producto nuevo (Privado - Requiere Token)
 router.post('/', verificarAdmin, async (req, res) => {
-  const { id, nombre, categoria_id, marca, precio, cantidad_stock, descripcion, unidad_base_id } = req.body;
+  const { id, nombre, categoria_id, marca, precio, cantidad_stock, descripcion, unidad_base_id, url_imagen } = req.body;
   try {
     const query = `
-      INSERT INTO productos (id, nombre, categoria_id, marca, precio, cantidad_stock, descripcion, unidad_base_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
+      INSERT INTO productos (id, nombre, categoria_id, marca, precio, cantidad_stock, descripcion, unidad_base_id, url_imagen)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *;
     `;
     const valores = [
       id, 
@@ -38,7 +38,8 @@ router.post('/', verificarAdmin, async (req, res) => {
       precio, 
       cantidad_stock || 0, 
       descripcion || '', 
-      unidad_base_id || 1
+      unidad_base_id || 1,
+      url_imagen || null
     ];
     const resultado = await pool.query(query, valores);
     res.status(201).json({ mensaje: '¡Producto registrado con éxito!', producto: resultado.rows[0] });
@@ -51,14 +52,14 @@ router.post('/', verificarAdmin, async (req, res) => {
 // PUT: Actualizar un producto existente (Protegido)
 router.put('/:id', verificarAdmin, async (req, res) => {
   const { id } = req.params;
-  const { nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca, descripcion } = req.body;
+  const { nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca, descripcion, url_imagen } = req.body;
   
   try {
     const result = await pool.query(
       `UPDATE productos 
-       SET nombre = $1, precio = $2, cantidad_stock = $3, categoria_id = $4, unidad_base_id = $5, marca = $6, descripcion = $7
-       WHERE id = $8 RETURNING *`,
-      [nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca || 'Genérica', descripcion || '', id]
+       SET nombre = $1, precio = $2, cantidad_stock = $3, categoria_id = $4, unidad_base_id = $5, marca = $6, descripcion = $7, url_imagen = $8
+       WHERE id = $9 RETURNING *`,
+      [nombre, precio, cantidad_stock, categoria_id, unidad_base_id, marca || 'Genérica', descripcion || '', url_imagen || null, id]
     );
 
     if (result.rowCount === 0) {
@@ -83,7 +84,7 @@ router.delete('/:id', verificarAdmin, async (req, res) => {
     res.json({ mensaje: `El producto con ID ${id} fue eliminado definitivamente.` });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: 'Error al eliminar. Asegúrate de que este producto no esté amarrado a una venta existente.' });
+    res.status(500).json({ error: 'Error al eliminar el producto. Verifica que no tenga registros relacionados (categoría, unidad o conversiones).' });
   }
 });
 
