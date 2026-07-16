@@ -49,6 +49,56 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
     `;
     const topValorRes = await pool.query(topValorQuery);
 
+    // 5. Ganancia: suma de ventas ya cobradas (Contado + Crédito ya pagado)
+    const gananciaQuery = `
+      SELECT
+        COALESCE(SUM(total) FILTER (WHERE fecha::date = CURRENT_DATE), 0) AS ganancia_hoy,
+        COALESCE(SUM(total) FILTER (WHERE date_trunc('month', fecha) = date_trunc('month', CURRENT_DATE)), 0) AS ganancia_mes,
+        COALESCE(SUM(total), 0) AS ganancia_historica
+      FROM ventas
+      WHERE estado = 'Pagado';
+    `;
+    const gananciaRes = await pool.query(gananciaQuery);
+
+    // 6. Pendiente de cobro: ventas a crédito que aún no se han pagado
+    const pendienteQuery = `
+      SELECT COALESCE(SUM(total), 0) AS total_pendiente, COUNT(*) AS cantidad_pendiente
+      FROM ventas
+      WHERE estado = 'Pendiente';
+    `;
+    const pendienteRes = await pool.query(pendienteQuery);
+
+    // 7. Costo de compras (reabastecimiento) de hoy, del mes y total histórico
+    const comprasQuery = `
+      SELECT
+        COALESCE(SUM(total) FILTER (WHERE fecha::date = CURRENT_DATE), 0) AS compras_hoy,
+        COALESCE(SUM(total) FILTER (WHERE date_trunc('month', fecha) = date_trunc('month', CURRENT_DATE)), 0) AS compras_mes,
+        COALESCE(SUM(total), 0) AS compras_historico
+      FROM compras;
+    `;
+    const comprasRes = await pool.query(comprasQuery);
+
+    // 8. Historial reciente combinado de ventas y compras
+    const historialVentasQuery = `
+      SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, COUNT(dv.id) AS items
+      FROM ventas v
+      LEFT JOIN detalle_ventas dv ON dv.venta_id = v.id
+      GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado
+      ORDER BY v.fecha DESC
+      LIMIT 10;
+    `;
+    const historialVentasRes = await pool.query(historialVentasQuery);
+
+    const historialComprasQuery = `
+      SELECT c.id, c.fecha, c.proveedor, c.total, COUNT(dc.id) AS items
+      FROM compras c
+      LEFT JOIN detalle_compras dc ON dc.compra_id = c.id
+      GROUP BY c.id, c.fecha, c.proveedor, c.total
+      ORDER BY c.fecha DESC
+      LIMIT 10;
+    `;
+    const historialComprasRes = await pool.query(historialComprasQuery);
+
     // Responder con la analítica consolidada de inventario
     res.json({
       totalProductos: parseInt(inventarioRes.rows[0].total_productos, 10),
@@ -57,7 +107,17 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
       stockBajoCantidad: parseInt(inventarioRes.rows[0].stock_bajo, 10),
       bajoStock: bajoStockRes.rows,
       valorPorCategoria: valorPorCategoriaRes.rows,
-      topValorInventario: topValorRes.rows
+      topValorInventario: topValorRes.rows,
+      gananciaHoy: parseFloat(gananciaRes.rows[0].ganancia_hoy),
+      gananciaMes: parseFloat(gananciaRes.rows[0].ganancia_mes),
+      gananciaHistorica: parseFloat(gananciaRes.rows[0].ganancia_historica),
+      pendienteTotal: parseFloat(pendienteRes.rows[0].total_pendiente),
+      pendienteCantidad: parseInt(pendienteRes.rows[0].cantidad_pendiente, 10),
+      comprasHoy: parseFloat(comprasRes.rows[0].compras_hoy),
+      comprasMes: parseFloat(comprasRes.rows[0].compras_mes),
+      comprasHistorico: parseFloat(comprasRes.rows[0].compras_historico),
+      historialVentas: historialVentasRes.rows,
+      historialCompras: historialComprasRes.rows
     });
 
   } catch (err) {
