@@ -23,8 +23,8 @@ app.use('/api/productos', productosRoutes); // <-- AÑADE ESTA LÍNEA
 app.use('/api/reportes', reportesRoutes);
 app.use('/api/categorias', categoriasRoutes);
 app.use('/api/unidades', unidadesRoutes);
-app.use('/api/unidades', ventasRoutes);
-app.use('/api/unidades', comprasRoutes);
+app.use('/api/ventas', ventasRoutes);
+app.use('/api/compras', comprasRoutes);
 
 // Ruta de prueba
 app.get('/', (req, res) => {
