@@ -84,7 +84,7 @@ router.post('/', verificarAdmin, async (req, res) => {
 
     await client.query('COMMIT');
     res.status(201).json({
-      mensaje: tipoVentaFinal === 'Crédito' ? '🧾 Venta a crédito registrada. Queda pendiente de cobro.' : '✅ Venta al contado registrada y sumada a la ganancia.',
+      mensaje: tipoVentaFinal === 'Crédito' ? 'Venta a crédito registrada. Queda pendiente de cobro.' : 'Venta al contado registrada y sumada a la ganancia.',
       venta: resVenta.rows[0]
     });
   } catch (err) {
@@ -107,7 +107,7 @@ router.patch('/:id/pagar', verificarAdmin, async (req, res) => {
     if (resultado.rowCount === 0) {
       return res.status(404).json({ error: 'La venta no existe o ya estaba pagada.' });
     }
-    res.json({ mensaje: '✅ Venta marcada como cobrada.', venta: resultado.rows[0] });
+    res.json({ mensaje: 'Venta marcada como cobrada.', venta: resultado.rows[0] });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Error al marcar la venta como pagada.' });

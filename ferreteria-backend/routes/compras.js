@@ -77,7 +77,7 @@ router.post('/', verificarAdmin, async (req, res) => {
     }
 
     await client.query('COMMIT');
-    res.status(201).json({ mensaje: '📦 Compra registrada. El stock fue actualizado.', compra: resCompra.rows[0] });
+    res.status(201).json({ mensaje: 'Compra registrada. El stock fue actualizado.', compra: resCompra.rows[0] });
   } catch (err) {
     await client.query('ROLLBACK');
     console.error("Error en compra:", err.message);
