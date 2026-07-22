@@ -144,6 +144,26 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
     `;
     const serieMensualRes = await pool.query(serieMensualQuery);
 
+    // 11. Ventas por producto (TODOS, incluso los que nunca se han vendido)
+    // para poder sacar el Top 10 más vendidos y el Top 10 menos vendidos
+    const ventasPorProductoQuery = `
+      SELECT p.id, p.nombre, p.marca,
+             COALESCE(SUM(dv.cantidad), 0) AS cantidad_vendida,
+             COALESCE(SUM(dv.cantidad * dv.precio_unitario), 0) AS ingresos
+      FROM productos p
+      LEFT JOIN detalle_ventas dv ON dv.producto_id = p.id
+      GROUP BY p.id, p.nombre, p.marca
+      ORDER BY cantidad_vendida DESC, p.nombre ASC;
+    `;
+    const ventasPorProductoRes = await pool.query(ventasPorProductoQuery);
+    const ventasPorProducto = ventasPorProductoRes.rows.map(r => ({
+      id: r.id,
+      nombre: r.nombre,
+      marca: r.marca,
+      cantidadVendida: parseFloat(r.cantidad_vendida),
+      ingresos: parseFloat(r.ingresos)
+    }));
+
     // Responder con la analítica consolidada de inventario
     res.json({
       totalProductos: parseInt(inventarioRes.rows[0].total_productos, 10),
@@ -182,7 +202,10 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
         etiqueta: r.etiqueta,
         ventas: parseFloat(r.ventas),
         compras: parseFloat(r.compras)
-      }))
+      })),
+      masVendidos: ventasPorProducto.slice(0, 10),
+      menosVendidos: [...ventasPorProducto].reverse().slice(0, 10),
+      ventasPorProducto: ventasPorProducto
     });
 
   } catch (err) {
