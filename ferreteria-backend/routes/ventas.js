@@ -7,10 +7,10 @@ const { verificarAdmin } = require('../middleware/authMiddleware');
 router.get('/', verificarAdmin, async (req, res) => {
   try {
     const query = `
-      SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente, COUNT(dv.id) AS items
+      SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente, v.cliente_direccion, v.cliente_nit, COUNT(dv.id) AS items
       FROM ventas v
       LEFT JOIN detalle_ventas dv ON dv.venta_id = v.id
-      GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente
+      GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente, v.cliente_direccion, v.cliente_nit
       ORDER BY v.fecha DESC
       LIMIT 30;
     `;
@@ -22,10 +22,19 @@ router.get('/', verificarAdmin, async (req, res) => {
   }
 });
 
-// GET: Detalle de artículos de una venta puntual
+// GET: Detalle de artículos de una venta puntual (incluye datos del comprador)
 router.get('/:id', verificarAdmin, async (req, res) => {
   const { id } = req.params;
   try {
+    const ventaQuery = `
+      SELECT id, fecha, total, tipo_venta, estado, cliente, cliente_direccion, cliente_nit
+      FROM ventas WHERE id = $1;
+    `;
+    const ventaResultado = await pool.query(ventaQuery, [id]);
+    if (ventaResultado.rows.length === 0) {
+      return res.status(404).json({ error: 'La venta no existe.' });
+    }
+
     const query = `
       SELECT dv.producto_id, p.nombre, dv.cantidad, dv.precio_unitario, (dv.cantidad * dv.precio_unitario) AS subtotal
       FROM detalle_ventas dv
@@ -34,7 +43,7 @@ router.get('/:id', verificarAdmin, async (req, res) => {
       ORDER BY dv.id ASC;
     `;
     const resultado = await pool.query(query, [id]);
-    res.json({ items: resultado.rows });
+    res.json({ venta: ventaResultado.rows[0], items: resultado.rows });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Error al obtener el detalle de la venta.' });
@@ -43,12 +52,17 @@ router.get('/:id', verificarAdmin, async (req, res) => {
 
 // POST: Registrar una venta (Contado o Crédito), verificar y descontar stock (Transaccional)
 router.post('/', verificarAdmin, async (req, res) => {
-  const { items, tipoVenta, cliente } = req.body;
+  const { items, tipoVenta, cliente, clienteDireccion, clienteNit } = req.body;
   const tipoVentaFinal = (tipoVenta === 'Crédito' || tipoVenta === 'Credito') ? 'Crédito' : 'Contado';
   const estadoInicial = tipoVentaFinal === 'Crédito' ? 'Pendiente' : 'Pagado';
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'Agrega al menos un producto a la venta.' });
+  }
+
+  // En una venta a crédito es indispensable saber a quién se le está fiando
+  if (tipoVentaFinal === 'Crédito' && (!cliente || !cliente.trim())) {
+    return res.status(400).json({ error: 'Para ventas a crédito debes indicar el nombre del comprador.' });
   }
 
   const client = await pool.connect();
@@ -69,8 +83,8 @@ router.post('/', verificarAdmin, async (req, res) => {
     }
 
     const resVenta = await client.query(
-      'INSERT INTO ventas (total, tipo_venta, estado, cliente) VALUES ($1, $2, $3, $4) RETURNING id, fecha, total, tipo_venta, estado, cliente',
-      [total, tipoVentaFinal, estadoInicial, cliente || null]
+      'INSERT INTO ventas (total, tipo_venta, estado, cliente, cliente_direccion, cliente_nit) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, fecha, total, tipo_venta, estado, cliente, cliente_direccion, cliente_nit',
+      [total, tipoVentaFinal, estadoInicial, cliente || null, clienteDireccion || null, clienteNit || null]
     );
     const ventaId = resVenta.rows[0].id;
 
