@@ -1,31 +1,45 @@
 const jwt = require('jsonwebtoken');
 
-// Middleware para verificar que el usuario tenga un token válido y sea Administrador
-const verificarAdmin = (req, res, next) => {
-  // Leer el token del encabezado (Header) de la petición
+// Verifica que exista un token válido y extrae el usuario. No revisa el rol.
+const verificarToken = (req, res) => {
   const token = req.header('Authorization');
-
   if (!token) {
-    return res.status(401).json({ error: 'Acceso denegado. No hay token de seguridad.' });
+    res.status(401).json({ error: 'Acceso denegado. No hay token de seguridad.' });
+    return null;
   }
-
   try {
-    // Quitar la palabra "Bearer " si viene incluida
     const tokenLimpio = token.replace('Bearer ', '');
-    
-    // Desencriptar el token
-    const verificado = jwt.verify(tokenLimpio, process.env.JWT_SECRET);
-    req.usuario = verificado; // Guardamos los datos del usuario en la petición
-
-    // Verificar si el rol es administrador
-    if (req.usuario.rol !== 'administrador') {
-      return res.status(403).json({ error: 'Acceso denegado. Solo los administradores pueden hacer esto.' });
-    }
-
-    next(); // Si todo está bien, dejamos que la petición continúe
+    return jwt.verify(tokenLimpio, process.env.JWT_SECRET);
   } catch (error) {
     res.status(400).json({ error: 'Token no válido o expirado.' });
+    return null;
   }
 };
 
-module.exports = { verificarAdmin };
+// Middleware de ACCESO GENERAL: administradores y operadores pueden usar
+// el sistema (productos, ventas, compras, reportes, catálogos, etc.)
+const verificarAdmin = (req, res, next) => {
+  const usuario = verificarToken(req, res);
+  if (!usuario) return; // verificarToken ya respondió el error
+
+  req.usuario = usuario;
+  if (!['administrador', 'operador'].includes(usuario.rol)) {
+    return res.status(403).json({ error: 'Acceso denegado. Tu cuenta no tiene permiso para usar el sistema.' });
+  }
+  next();
+};
+
+// Middleware de ACCESO EXCLUSIVO: solo el rol "administrador" puede gestionar
+// usuarios. Los operadores tienen prohibido crear, editar o eliminar cuentas.
+const verificarSoloAdministrador = (req, res, next) => {
+  const usuario = verificarToken(req, res);
+  if (!usuario) return;
+
+  req.usuario = usuario;
+  if (usuario.rol !== 'administrador') {
+    return res.status(403).json({ error: 'Solo un administrador puede gestionar usuarios.' });
+  }
+  next();
+};
+
+module.exports = { verificarAdmin, verificarSoloAdministrador };

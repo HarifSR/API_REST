@@ -2,10 +2,10 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../db');
-const { verificarAdmin } = require('../middleware/authMiddleware');
+const { verificarSoloAdministrador } = require('../middleware/authMiddleware');
 
 // GET: Listar todos los usuarios (nunca se devuelve la contraseña)
-router.get('/', verificarAdmin, async (req, res) => {
+router.get('/', verificarSoloAdministrador, async (req, res) => {
   try {
     const resultado = await pool.query(
       'SELECT id, nombre, email, rol, fecha_creacion FROM usuarios ORDER BY fecha_creacion ASC'
@@ -18,7 +18,7 @@ router.get('/', verificarAdmin, async (req, res) => {
 });
 
 // POST: Crear un nuevo usuario (la contraseña se guarda con hash bcrypt)
-router.post('/', verificarAdmin, async (req, res) => {
+router.post('/', verificarSoloAdministrador, async (req, res) => {
   const { nombre, email, password, rol } = req.body;
 
   if (!nombre || !email || !password) {
@@ -33,7 +33,7 @@ router.post('/', verificarAdmin, async (req, res) => {
     const resultado = await pool.query(
       `INSERT INTO usuarios (nombre, email, password_hash, rol) 
        VALUES ($1, $2, $3, $4) RETURNING id, nombre, email, rol, fecha_creacion`,
-      [nombre, email, hash, rol === 'cliente' ? 'cliente' : 'administrador']
+      [nombre, email, hash, rol === 'operador' ? 'operador' : 'administrador']
     );
     res.status(201).json({ mensaje: 'Usuario creado correctamente.', usuario: resultado.rows[0] });
   } catch (err) {
@@ -46,7 +46,7 @@ router.post('/', verificarAdmin, async (req, res) => {
 });
 
 // PUT: Editar un usuario (nombre, correo, rol; la contraseña solo se cambia si se envía una nueva)
-router.put('/:id', verificarAdmin, async (req, res) => {
+router.put('/:id', verificarSoloAdministrador, async (req, res) => {
   const { id } = req.params;
   const { nombre, email, rol, password } = req.body;
 
@@ -64,13 +64,13 @@ router.put('/:id', verificarAdmin, async (req, res) => {
       resultado = await pool.query(
         `UPDATE usuarios SET nombre = $1, email = $2, rol = $3, password_hash = $4
          WHERE id = $5 RETURNING id, nombre, email, rol, fecha_creacion`,
-        [nombre, email, rol === 'cliente' ? 'cliente' : 'administrador', hash, id]
+        [nombre, email, rol === 'operador' ? 'operador' : 'administrador', hash, id]
       );
     } else {
       resultado = await pool.query(
         `UPDATE usuarios SET nombre = $1, email = $2, rol = $3
          WHERE id = $4 RETURNING id, nombre, email, rol, fecha_creacion`,
-        [nombre, email, rol === 'cliente' ? 'cliente' : 'administrador', id]
+        [nombre, email, rol === 'operador' ? 'operador' : 'administrador', id]
       );
     }
 
@@ -88,7 +88,7 @@ router.put('/:id', verificarAdmin, async (req, res) => {
 });
 
 // DELETE: Eliminar un usuario (no se permite auto-eliminarse, ni dejar el sistema sin administradores)
-router.delete('/:id', verificarAdmin, async (req, res) => {
+router.delete('/:id', verificarSoloAdministrador, async (req, res) => {
   const { id } = req.params;
 
   if (req.usuario.id === parseInt(id, 10)) {
