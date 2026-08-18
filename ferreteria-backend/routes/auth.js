@@ -19,9 +19,12 @@ router.post('/login', async (req, res) => {
     const usuario = result.rows[0];
 
     // 2. Verificar contraseña
-    // NOTA: Para este prototipo, si la contraseña en la BD no está encriptada, la comparamos directo.
-    // En producción DEBES usar: const passwordValida = await bcrypt.compare(password, usuario.password_hash);
-    const passwordValida = password === usuario.password_hash; 
+    // Los usuarios nuevos se guardan con bcrypt (el hash siempre empieza con "$2").
+    // Si un usuario viejo todavía tiene la contraseña en texto plano, se compara
+    // directo por compatibilidad, pero debe actualizarse cuanto antes.
+    const passwordValida = usuario.password_hash.startsWith('$2')
+      ? await bcrypt.compare(password, usuario.password_hash)
+      : password === usuario.password_hash;
 
     if (!passwordValida) {
       return res.status(401).json({ error: 'Contraseña incorrecta' });

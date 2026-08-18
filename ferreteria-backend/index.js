@@ -5,7 +5,12 @@ require('dotenv').config();
 const app = express();
 
 // Middlewares
-app.use(cors());
+// En producción, FRONTEND_URL debe ser la URL de Netlify (ej: https://tu-app.netlify.app)
+// Si no está definida (desarrollo local), se permite cualquier origen.
+const corsOptions = process.env.FRONTEND_URL
+  ? { origin: process.env.FRONTEND_URL }
+  : {};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 // Importar Rutas
@@ -16,6 +21,7 @@ const categoriasRoutes = require('./routes/categorias');
 const unidadesRoutes = require('./routes/unidades');
 const ventasRoutes = require('./routes/ventas');
 const comprasRoutes = require('./routes/compras');
+const usuariosRoutes = require('./routes/usuarios');
 
 // Usar Rutas
 app.use('/api/auth', authRoutes);
@@ -25,6 +31,7 @@ app.use('/api/categorias', categoriasRoutes);
 app.use('/api/unidades', unidadesRoutes);
 app.use('/api/ventas', ventasRoutes);
 app.use('/api/compras', comprasRoutes);
+app.use('/api/usuarios', usuariosRoutes);
 
 // Ruta de prueba
 app.get('/', (req, res) => {
