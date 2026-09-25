@@ -214,4 +214,68 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
   }
 });
 
+// GET: Kardex de un producto — historial cronológico de entradas (compras) y
+// salidas (ventas) con saldo acumulado, el reporte clásico de control de inventario.
+router.get('/kardex/:productoId', verificarAdmin, async (req, res) => {
+  const { productoId } = req.params;
+  try {
+    const productoRes = await pool.query(
+      'SELECT id, nombre, cantidad_stock FROM productos WHERE id = $1',
+      [productoId]
+    );
+    if (productoRes.rows.length === 0) {
+      return res.status(404).json({ error: 'El producto no existe.' });
+    }
+    const producto = productoRes.rows[0];
+
+    // Unimos las entradas (compras) y salidas (ventas) de este producto en una sola línea de tiempo
+    const movimientosRes = await pool.query(
+      `SELECT fecha, tipo, referencia, cantidad, costo_o_precio, orden_id FROM (
+         SELECT c.fecha AS fecha, 'Entrada' AS tipo, ('Compra #' || dc.compra_id) AS referencia,
+                dc.cantidad AS cantidad, dc.costo_unitario AS costo_o_precio, dc.id AS orden_id
+         FROM detalle_compras dc
+         JOIN compras c ON c.id = dc.compra_id
+         WHERE dc.producto_id = $1
+         UNION ALL
+         SELECT v.fecha AS fecha, 'Salida' AS tipo, ('Venta #' || dv.venta_id) AS referencia,
+                -dv.cantidad AS cantidad, dv.precio_unitario AS costo_o_precio, dv.id AS orden_id
+         FROM detalle_ventas dv
+         JOIN ventas v ON v.id = dv.venta_id
+         WHERE dv.producto_id = $1
+       ) movimientos
+       ORDER BY fecha ASC, orden_id ASC`,
+      [productoId]
+    );
+
+    // El saldo inicial se reconstruye restando al stock actual el efecto neto de
+    // todos los movimientos registrados, para que el saldo acumulado del Kardex
+    // termine exactamente en la existencia real del producto.
+    const netoMovimientos = movimientosRes.rows.reduce((acc, m) => acc + parseFloat(m.cantidad), 0);
+    const stockActual = parseFloat(producto.cantidad_stock);
+    const saldoInicial = stockActual - netoMovimientos;
+
+    let saldo = saldoInicial;
+    const movimientos = movimientosRes.rows.map(m => {
+      saldo += parseFloat(m.cantidad);
+      return {
+        fecha: m.fecha,
+        tipo: m.tipo,
+        referencia: m.referencia,
+        cantidad: parseFloat(m.cantidad),
+        costoOPrecio: parseFloat(m.costo_o_precio),
+        saldo
+      };
+    });
+
+    res.json({
+      producto: { id: producto.id, nombre: producto.nombre, stockActual },
+      saldoInicial,
+      movimientos
+    });
+  } catch (err) {
+    console.error('Error en Kardex:', err.message);
+    res.status(500).json({ error: 'Error al generar el kardex del producto.' });
+  }
+});
+
 module.exports = router;
