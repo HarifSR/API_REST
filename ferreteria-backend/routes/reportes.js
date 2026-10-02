@@ -80,10 +80,10 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
 
     // 8. Historial reciente combinado de ventas y compras
     const historialVentasQuery = `
-      SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, COUNT(dv.id) AS items
+      SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente, COUNT(dv.id) AS items
       FROM ventas v
       LEFT JOIN detalle_ventas dv ON dv.venta_id = v.id
-      GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado
+      GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente
       ORDER BY v.fecha DESC
       LIMIT 10;
     `;
