@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { soloAdministrador } = require('../middleware/authMiddleware');
+const { Condiciones, texto, escaparLike, sinAcentosJs, sinAcentosSql, leerLimite, agregarRangoFechas, responderError } = require('../helpers/filtrosHistorial');
 
 // Las compras (y sus costos) son información exclusiva del administrador.
 const exigirAdministrador = soloAdministrador('Solo un administrador puede ver o registrar compras.');
@@ -22,6 +23,55 @@ router.get('/', exigirAdministrador, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Error al obtener el historial de compras.' });
+  }
+});
+
+// GET: Búsqueda filtrada en TODO el historial de compras.
+// Filtros opcionales (query): q (proveedor o número de compra), desde, hasta, limite.
+// IMPORTANTE: debe declararse antes de '/:id' para que "buscar" no se tome como un id.
+router.get('/buscar', exigirAdministrador, async (req, res) => {
+  try {
+    const cond = new Condiciones();
+
+    const q = texto(req.query.q);
+    if (q) {
+      const patron = `%${escaparLike(sinAcentosJs(q))}%`;
+      const esNumero = /^#?\d{1,9}$/.test(q);
+      cond.agregar((p) => {
+        const ph = p(patron);
+        let sql = `${sinAcentosSql('c.proveedor')} LIKE ${ph}`;
+        if (esNumero) sql += ` OR c.id = ${p(parseInt(q.replace('#', ''), 10))}`;
+        return `(${sql})`;
+      });
+    }
+
+    agregarRangoFechas(cond, req.query, 'c.fecha');
+    const limite = leerLimite(req.query.limite);
+    const where = cond.where();
+
+    const resumen = await pool.query(
+      `SELECT COUNT(*) AS total, COALESCE(SUM(c.total), 0) AS suma FROM compras c ${where}`,
+      cond.valores
+    );
+
+    const filas = await pool.query(
+      `SELECT c.id, c.fecha, c.proveedor, c.total, COUNT(dc.id) AS items
+       FROM compras c
+       LEFT JOIN detalle_compras dc ON dc.compra_id = c.id
+       ${where}
+       GROUP BY c.id, c.fecha, c.proveedor, c.total
+       ORDER BY c.fecha DESC, c.id DESC
+       LIMIT ${limite}`,
+      cond.valores
+    );
+
+    res.json({
+      total: parseInt(resumen.rows[0].total, 10),
+      sumaTotal: parseFloat(resumen.rows[0].suma),
+      resultados: filas.rows
+    });
+  } catch (err) {
+    responderError(res, err, 'Error al buscar en el historial de compras.');
   }
 });
 

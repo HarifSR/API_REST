@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarAdmin } = require('../middleware/authMiddleware');
+const { Condiciones, texto, escaparLike, sinAcentosJs, sinAcentosSql, leerLimite, agregarRangoFechas, ErrorFiltro, responderError } = require('../helpers/filtrosHistorial');
 
 // GET: Historial de ventas recientes (con tipo, estado y cantidad de artículos)
 router.get('/', verificarAdmin, async (req, res) => {
@@ -19,6 +20,69 @@ router.get('/', verificarAdmin, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Error al obtener el historial de ventas.' });
+  }
+});
+
+// GET: Búsqueda filtrada en TODO el historial de ventas.
+// Filtros opcionales (query): q (cliente, NIT o número de venta), tipo, estado, desde, hasta, limite.
+// IMPORTANTE: debe declararse antes de '/:id' para que "buscar" no se tome como un id.
+router.get('/buscar', verificarAdmin, async (req, res) => {
+  try {
+    const cond = new Condiciones();
+
+    const q = texto(req.query.q);
+    if (q) {
+      const patron = `%${escaparLike(sinAcentosJs(q))}%`;
+      const esNumero = /^#?\d{1,9}$/.test(q);
+      cond.agregar((p) => {
+        const ph = p(patron);
+        let sql = `${sinAcentosSql('v.cliente')} LIKE ${ph} OR ${sinAcentosSql('v.cliente_nit')} LIKE ${ph}`;
+        if (esNumero) sql += ` OR v.id = ${p(parseInt(q.replace('#', ''), 10))}`;
+        return `(${sql})`;
+      });
+    }
+
+    const tipo = texto(req.query.tipo);
+    if (tipo) {
+      if (!['Contado', 'Crédito'].includes(tipo)) throw new ErrorFiltro('El tipo de venta no es válido.');
+      cond.agregar((p) => `v.tipo_venta = ${p(tipo)}`);
+    }
+
+    const estado = texto(req.query.estado);
+    if (estado) {
+      if (!['Pagado', 'Pendiente'].includes(estado)) throw new ErrorFiltro('El estado de la venta no es válido.');
+      cond.agregar((p) => `v.estado = ${p(estado)}`);
+    }
+
+    agregarRangoFechas(cond, req.query, 'v.fecha');
+    const limite = leerLimite(req.query.limite);
+    const where = cond.where();
+
+    // Total de coincidencias (sin límite) y suma de sus montos
+    const resumen = await pool.query(
+      `SELECT COUNT(*) AS total, COALESCE(SUM(v.total), 0) AS suma FROM ventas v ${where}`,
+      cond.valores
+    );
+
+    const filas = await pool.query(
+      `SELECT v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente, COUNT(dv.id) AS items
+       FROM ventas v
+       LEFT JOIN detalle_ventas dv ON dv.venta_id = v.id
+       ${where}
+       GROUP BY v.id, v.fecha, v.total, v.tipo_venta, v.estado, v.cliente
+       ORDER BY v.fecha DESC, v.id DESC
+       LIMIT ${limite}`,
+      cond.valores
+    );
+
+    res.json({
+      total: parseInt(resumen.rows[0].total, 10),
+      // La suma de montos equivale a las ganancias: solo la recibe el administrador
+      sumaTotal: req.usuario.rol === 'administrador' ? parseFloat(resumen.rows[0].suma) : null,
+      resultados: filas.rows
+    });
+  } catch (err) {
+    responderError(res, err, 'Error al buscar en el historial de ventas.');
   }
 });
 
