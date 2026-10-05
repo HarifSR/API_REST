@@ -1,10 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { verificarAdmin } = require('../middleware/authMiddleware');
+const { soloAdministrador } = require('../middleware/authMiddleware');
+
+// Las compras (y sus costos) son información exclusiva del administrador.
+const exigirAdministrador = soloAdministrador('Solo un administrador puede ver o registrar compras.');
 
 // GET: Historial de compras recientes
-router.get('/', verificarAdmin, async (req, res) => {
+router.get('/', exigirAdministrador, async (req, res) => {
   try {
     const query = `
       SELECT c.id, c.fecha, c.proveedor, c.total, COUNT(dc.id) AS items
@@ -23,7 +26,7 @@ router.get('/', verificarAdmin, async (req, res) => {
 });
 
 // GET: Detalle de artículos de una compra puntual (incluye datos de la compra)
-router.get('/:id', verificarAdmin, async (req, res) => {
+router.get('/:id', exigirAdministrador, async (req, res) => {
   const { id } = req.params;
   try {
     const compraRes = await pool.query('SELECT id, fecha, proveedor, total FROM compras WHERE id = $1', [id]);
@@ -46,7 +49,7 @@ router.get('/:id', verificarAdmin, async (req, res) => {
 });
 
 // POST: Registrar una compra (reabastecimiento) y aumentar stock (Transaccional)
-router.post('/', verificarAdmin, async (req, res) => {
+router.post('/', exigirAdministrador, async (req, res) => {
   const { items, proveedor } = req.body;
 
   if (!items || items.length === 0) {
@@ -94,7 +97,7 @@ router.post('/', verificarAdmin, async (req, res) => {
 // PUT: Editar una compra ya registrada (corrige errores de captura).
 // Revierte el stock que había sumado y aplica el nuevo. Si alguno de esos
 // productos ya se vendió después, no se deja bajar el stock a negativo.
-router.put('/:id', verificarAdmin, async (req, res) => {
+router.put('/:id', exigirAdministrador, async (req, res) => {
   const { id } = req.params;
   const { items, proveedor } = req.body;
 
@@ -157,7 +160,7 @@ router.put('/:id', verificarAdmin, async (req, res) => {
 
 // DELETE: Eliminar una compra (resta el stock que había sumado).
 // No se permite si parte de ese stock ya fue vendido (quedaría en negativo).
-router.delete('/:id', verificarAdmin, async (req, res) => {
+router.delete('/:id', exigirAdministrador, async (req, res) => {
   const { id } = req.params;
   const client = await pool.connect();
   try {

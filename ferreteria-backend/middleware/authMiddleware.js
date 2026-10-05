@@ -42,4 +42,18 @@ const verificarSoloAdministrador = (req, res, next) => {
   next();
 };
 
-module.exports = { verificarAdmin, verificarSoloAdministrador };
+// Fábrica de middleware de ACCESO EXCLUSIVO con mensaje personalizado.
+// Se usa para proteger información o acciones que solo debe ver el administrador
+// (por ejemplo, las compras y sus costos). Un operador recibe 403.
+const soloAdministrador = (mensaje) => (req, res, next) => {
+  const usuario = verificarToken(req, res);
+  if (!usuario) return;
+
+  req.usuario = usuario;
+  if (usuario.rol !== 'administrador') {
+    return res.status(403).json({ error: mensaje || 'Solo un administrador puede realizar esta acción.' });
+  }
+  next();
+};
+
+module.exports = { verificarAdmin, verificarSoloAdministrador, soloAdministrador };

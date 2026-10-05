@@ -164,8 +164,8 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
       ingresos: parseFloat(r.ingresos)
     }));
 
-    // Responder con la analítica consolidada de inventario
-    res.json({
+    // Analítica consolidada de inventario (versión completa, para el administrador)
+    const respuesta = {
       totalProductos: parseInt(inventarioRes.rows[0].total_productos, 10),
       valorInventario: parseFloat(inventarioRes.rows[0].valor_inventario),
       agotados: parseInt(inventarioRes.rows[0].agotados, 10),
@@ -206,7 +206,32 @@ router.get('/dashboard', verificarAdmin, async (req, res) => {
       masVendidos: ventasPorProducto.slice(0, 10),
       menosVendidos: [...ventasPorProducto].reverse().slice(0, 10),
       ventasPorProducto: ventasPorProducto
-    });
+    };
+
+    // El OPERADOR no debe recibir información financiera: ganancias, compras, valor del
+    // inventario, ingresos por producto ni el historial de compras. Se conserva la misma
+    // estructura de la respuesta (con valores en cero o vacíos) para no romper la pantalla.
+    if (req.usuario.rol !== 'administrador') {
+      const periodoVacio = { ventas: { actual: 0, anterior: 0 }, compras: { actual: 0, anterior: 0 }, ganancia: { actual: 0, anterior: 0 } };
+      const sinIngresos = (lista) => lista.map(({ ingresos, ...resto }) => resto);
+      return res.json({
+        ...respuesta,
+        valorInventario: 0,
+        valorPorCategoria: [],
+        topValorInventario: [],
+        gananciaHoy: 0, gananciaMes: 0, gananciaHistorica: 0,
+        pendienteTotal: 0, pendienteCantidad: 0,
+        comprasHoy: 0, comprasMes: 0, comprasHistorico: 0,
+        historialCompras: [],
+        comparativas: { semana: periodoVacio, mes: periodoVacio, anio: periodoVacio },
+        serieMensual: [],
+        masVendidos: sinIngresos(respuesta.masVendidos),
+        menosVendidos: sinIngresos(respuesta.menosVendidos),
+        ventasPorProducto: sinIngresos(respuesta.ventasPorProducto)
+      });
+    }
+
+    res.json(respuesta);
 
   } catch (err) {
     console.error("Error en Dashboard:", err.message);
@@ -262,7 +287,8 @@ router.get('/kardex/:productoId', verificarAdmin, async (req, res) => {
         tipo: m.tipo,
         referencia: m.referencia,
         cantidad: parseFloat(m.cantidad),
-        costoOPrecio: parseFloat(m.costo_o_precio),
+        // El costo de compra de las entradas solo lo ve el administrador; el operador ve solo precios de venta.
+        costoOPrecio: (m.tipo === 'Entrada' && req.usuario.rol !== 'administrador') ? null : parseFloat(m.costo_o_precio),
         saldo
       };
     });
