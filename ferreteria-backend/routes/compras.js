@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('../db');
 const { soloAdministrador } = require('../middleware/authMiddleware');
 const { Condiciones, texto, escaparLike, sinAcentosJs, sinAcentosSql, leerLimite, agregarRangoFechas, responderError } = require('../helpers/filtrosHistorial');
+const { analizarCostos } = require('../helpers/costos');
 
 // Las compras (y sus costos) son información exclusiva del administrador.
 const exigirAdministrador = soloAdministrador('Solo un administrador puede ver o registrar compras.');
@@ -23,6 +24,61 @@ router.get('/', exigirAdministrador, async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: 'Error al obtener el historial de compras.' });
+  }
+});
+
+// GET: Historial de costos de compra de UN producto, con la variación entre compras.
+// Filtros opcionales (query): desde, hasta (rango de fechas), limite (filas del historial),
+// excluirCompra (id de una compra a ignorar; se usa al editar esa misma compra).
+// El costo se guarda por unidad base, por lo que las compras por caja/lote son comparables.
+router.get('/costos/:productoId', exigirAdministrador, async (req, res) => {
+  try {
+    const { productoId } = req.params;
+    const producto = await pool.query(
+      'SELECT id, nombre, precio, unidad_secundaria_nombre, unidad_secundaria_cantidad FROM productos WHERE id = $1',
+      [productoId]
+    );
+    if (producto.rows.length === 0) {
+      return res.status(404).json({ error: 'El producto no existe.' });
+    }
+    const p = producto.rows[0];
+
+    const cond = new Condiciones();
+    cond.agregar((ph) => `dc.producto_id = ${ph(productoId)}`);
+    agregarRangoFechas(cond, req.query, 'c.fecha');
+    const excluir = parseInt(req.query.excluirCompra, 10);
+    if (Number.isInteger(excluir) && excluir > 0 && excluir < 2147483647) {
+      cond.agregar((ph) => `c.id <> ${ph(excluir)}`);
+    }
+
+    // Se piden las 5000 más recientes y se reordenan de la más antigua a la más nueva para calcular las variaciones
+    const filas = await pool.query(
+      `SELECT c.id AS compra_id, c.fecha, c.proveedor, dc.cantidad, dc.costo_unitario
+       FROM detalle_compras dc
+       JOIN compras c ON c.id = dc.compra_id
+       ${cond.where()}
+       ORDER BY c.fecha DESC, c.id DESC, dc.id DESC
+       LIMIT 5000`,
+      cond.valores
+    );
+
+    const analisis = analizarCostos(filas.rows.reverse(), {
+      precioVenta: parseFloat(p.precio),
+      limite: leerLimite(req.query.limite, 100, 300)
+    });
+
+    res.json({
+      producto: {
+        id: p.id,
+        nombre: p.nombre,
+        precioVenta: parseFloat(p.precio),
+        unidadSecundariaNombre: p.unidad_secundaria_nombre || null,
+        unidadSecundariaCantidad: p.unidad_secundaria_cantidad || null
+      },
+      ...analisis
+    });
+  } catch (err) {
+    responderError(res, err, 'Error al consultar los costos de compra del producto.');
   }
 });
 
