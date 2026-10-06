@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { verificarAdmin } = require('../middleware/authMiddleware');
+const { resolverComprador } = require('../helpers/comprador');
 const { Condiciones, texto, escaparLike, sinAcentosJs, sinAcentosSql, leerLimite, agregarRangoFechas, ErrorFiltro, responderError } = require('../helpers/filtrosHistorial');
 
 // GET: Historial de ventas recientes (con tipo, estado y cantidad de artículos)
@@ -116,7 +117,7 @@ router.get('/:id', verificarAdmin, async (req, res) => {
 
 // POST: Registrar una venta (Contado o Crédito), verificar y descontar stock (Transaccional)
 router.post('/', verificarAdmin, async (req, res) => {
-  const { items, tipoVenta, cliente, clienteDireccion, clienteNit } = req.body;
+  const { items, tipoVenta } = req.body;
   const tipoVentaFinal = (tipoVenta === 'Crédito' || tipoVenta === 'Credito') ? 'Crédito' : 'Contado';
   const estadoInicial = tipoVentaFinal === 'Crédito' ? 'Pendiente' : 'Pagado';
 
@@ -124,9 +125,11 @@ router.post('/', verificarAdmin, async (req, res) => {
     return res.status(400).json({ error: 'Agrega al menos un producto a la venta.' });
   }
 
-  // En una venta a crédito es indispensable saber a quién se le está fiando
-  if (tipoVentaFinal === 'Crédito' && (!cliente || !cliente.trim())) {
-    return res.status(400).json({ error: 'Para ventas a crédito debes indicar el nombre del comprador.' });
+  // Contado: facturar con nombre y NIT, o Consumidor Final (C/F).
+  // Crédito: es indispensable saber a quién se le está fiando.
+  const comprador = resolverComprador(tipoVentaFinal, req.body);
+  if (!comprador.ok) {
+    return res.status(400).json({ error: comprador.error });
   }
 
   const client = await pool.connect();
@@ -148,7 +151,7 @@ router.post('/', verificarAdmin, async (req, res) => {
 
     const resVenta = await client.query(
       'INSERT INTO ventas (total, tipo_venta, estado, cliente, cliente_direccion, cliente_nit) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, fecha, total, tipo_venta, estado, cliente, cliente_direccion, cliente_nit',
-      [total, tipoVentaFinal, estadoInicial, cliente || null, clienteDireccion || null, clienteNit || null]
+      [total, tipoVentaFinal, estadoInicial, comprador.cliente, comprador.direccion, comprador.nit]
     );
     const ventaId = resVenta.rows[0].id;
 
@@ -196,14 +199,15 @@ router.patch('/:id/pagar', verificarAdmin, async (req, res) => {
 // Revierte el stock de los productos originales, valida y aplica los nuevos.
 router.put('/:id', verificarAdmin, async (req, res) => {
   const { id } = req.params;
-  const { items, tipoVenta, cliente, clienteDireccion, clienteNit } = req.body;
+  const { items, tipoVenta } = req.body;
   const tipoVentaFinal = (tipoVenta === 'Crédito' || tipoVenta === 'Credito') ? 'Crédito' : 'Contado';
 
   if (!items || items.length === 0) {
     return res.status(400).json({ error: 'La venta debe tener al menos un producto.' });
   }
-  if (tipoVentaFinal === 'Crédito' && (!cliente || !cliente.trim())) {
-    return res.status(400).json({ error: 'Para ventas a crédito debes indicar el nombre del comprador.' });
+  const comprador = resolverComprador(tipoVentaFinal, req.body);
+  if (!comprador.ok) {
+    return res.status(400).json({ error: comprador.error });
   }
 
   const client = await pool.connect();
@@ -240,7 +244,7 @@ router.put('/:id', verificarAdmin, async (req, res) => {
     const ventaActualizada = await client.query(
       `UPDATE ventas SET total = $1, tipo_venta = $2, estado = $3, cliente = $4, cliente_direccion = $5, cliente_nit = $6
        WHERE id = $7 RETURNING *`,
-      [total, tipoVentaFinal, estadoFinal, cliente || null, clienteDireccion || null, clienteNit || null, id]
+      [total, tipoVentaFinal, estadoFinal, comprador.cliente, comprador.direccion, comprador.nit, id]
     );
 
     for (const item of items) {
